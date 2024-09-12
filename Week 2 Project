@@ -1,17 +1,30 @@
 import pandas as pd
 import numpy as np
-from scipy.stats import skew, kurtosis
 
-df = pd.read_csv('problem1.csv')
-data = df['column_name']  # Replace 'column_name' with the actual column name
+data = pd.read_csv('problem1.csv')
 
-# Calculating moments
-mean = np.mean(data)
-variance = np.var(data, ddof=0)
-skewness = skew(data, bias=False)
-kurtosis_val = kurtosis(data, fisher=True)
+def calculate_moments(data):
+    mean = np.mean(data)
+    variance = np.var(data)
+    skewness = np.mean((data - mean) ** 3) / (np.std(data) ** 3)
+    kurtosis = np.mean((data - mean) ** 4) / (np.std(data) ** 4) - 3  # Excess kurtosis
+
+    return mean, variance, skewness, kurtosis
+
+data_values = data['x']
+moments = calculate_moments(data_values)
+print(f"Mean: {moments[0]}")
+print(f"Variance: {moments[1]}")
+print(f"Skewness: {moments[2]}")
+print(f"Kurtosis: {moments[3]}")
+
+from scipy.stats import kurtosis, skew
+mean = np.mean(data_values)
+variance = np.var(data_values, ddof=0)
+skewness = skew(data_values)
+kurtosis_value = kurtosis(data_values)
 
 print(f"Mean: {mean}")
 print(f"Variance: {variance}")
 print(f"Skewness: {skewness}")
-print(f"Kurtosis: {kurtosis_val}")
+print(f"Kurtosis: {kurtosis_value}")
