@@ -1,0 +1,17 @@
+import pandas as pd
+import numpy as np
+from scipy.stats import skew, kurtosis
+
+df = pd.read_csv('problem1.csv')
+data = df['column_name']  # Replace 'column_name' with the actual column name
+
+# Calculating moments
+mean = np.mean(data)
+variance = np.var(data, ddof=0)
+skewness = skew(data, bias=False)
+kurtosis_val = kurtosis(data, fisher=True)
+
+print(f"Mean: {mean}")
+print(f"Variance: {variance}")
+print(f"Skewness: {skewness}")
+print(f"Kurtosis: {kurtosis_val}")
