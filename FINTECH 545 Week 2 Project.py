@@ -1,0 +1,209 @@
+#Problem 1
+    #calculated 
+import csv
+
+def calculate_moments(data):
+    n = len(data)
+    
+    # First moment: Mean (μ1)
+    mean = sum(data) / n
+    
+    # Second moment: Variance (μ2)
+    variance = sum((x - mean) ** 2 for x in data) / (n - 1)
+    
+    # Third moment: Skewness (μ3)
+    skewness_numerator = sum((x - mean) ** 3 for x in data)
+    skewness = (n * skewness_numerator) / ((n - 1) * (n - 2) * (variance ** 1.5))
+    
+    # Fourth moment: Kurtosis (μ4)
+    kurtosis_numerator = sum((x - mean) ** 4 for x in data)
+    kurtosis = ((n * (n + 1) * kurtosis_numerator) / 
+                ((n - 1) * (n - 2) * (n - 3) * (variance ** 2))) - \
+               (3 * (n - 1) ** 2 / ((n - 2) * (n - 3)))
+    
+    return mean, variance, skewness, kurtosis
+
+def read_data_from_csv(file_path):
+    data = []
+    with open(file_path, newline='') as csvfile:
+        reader = csv.reader(csvfile)
+        next(reader)  
+        for row in reader:
+            data.append(float(row[0]))  
+    return data
+
+file_path = '/Users/ellieieie_/Desktop/problem1.csv'  
+data = read_data_from_csv(file_path)
+mean, variance, skewness, kurtosis = calculate_moments(data)
+
+print(f"Mean: {mean}")
+print(f"Variance: {variance}")
+print(f"Skewness: {skewness}")
+print(f"Kurtosis: {kurtosis}")
+
+    #using numpy and scipy
+import pandas as pd
+import numpy as np
+from scipy.stats import kurtosis, skew
+
+data = pd.read_csv('/Users/ellieieie_/Desktop/problem1.csv')
+data_values = data['x'].to_numpy()
+
+mean_scipy = np.mean(data_values)
+variance_scipy = np.var(data_values, ddof=1)  
+skewness_scipy = skew(data_values, bias=False) 
+kurtosis_scipy = kurtosis(data_values, bias=False) 
+
+print(f"Mean (scipy): {mean_scipy}")
+print(f"Variance (scipy): {variance_scipy}")
+print(f"Skewness (scipy): {skewness_scipy}")
+print(f"Kurtosis (scipy): {kurtosis_scipy}")
+
+#Problem 2
+import pandas as pd
+import numpy as np
+import statsmodels.api as sm
+from scipy.optimize import minimize
+import scipy.stats as stats
+
+data = pd.read_csv('/Users/ellieieie_/Desktop/problem2.csv')
+X = data['x']
+y = data['y']
+X = sm.add_constant(X)
+
+#OLS
+ols_model = sm.OLS(y, X).fit()
+print("OLS Results:")
+print(ols_model.summary())
+
+y_pred_ols = ols_model.predict(X)
+SSError_ols = np.sum((y - y_pred_ols) ** 2)
+SSTotal = np.sum((y - np.mean(y)) ** 2)
+R2_ols = 1 - (SSError_ols / SSTotal)
+
+y_pred_ols = ols_model.predict(X)
+residuals_ols = y - y_pred_ols
+SS_error_ols = np.sum(residuals_ols**2)
+SS_total = np.sum((y - np.mean(y))**2)
+R2_ols = 1 - (SS_error_ols / SS_total)
+
+#MLE under normality assumption
+def negative_log_likelihood(params):
+    beta = params[:-1]
+    sigma = params[-1]
+    residuals = y - X.dot(beta)
+    n = len(y)
+    log_likelihood = - (n / 2) * (np.log(2 * np.pi * sigma**2) + np.sum((residuals / sigma)**2))
+    return -log_likelihood
+
+initial_guess = np.append(ols_model.params.values, np.std(ols_model.resid))
+result = minimize(negative_log_likelihood, initial_guess, method='BFGS')
+mle_params = result.x
+
+print("\nMLE Results (Normality Assumption):")
+print(f"Beta: {mle_params[:-1]}")
+print(f"Sigma: {mle_params[-1]}")
+# T-distribution
+def negative_log_likelihood(params, X, y, nu):
+    beta = params[:-1]  
+    sigma = params[-1]  
+    residuals_t= y- X.dot(beta)
+    log_likelihood = np.sum(stats.t.logpdf(residuals_t / sigma, df=nu, scale=sigma))
+    return -log_likelihood
+
+initial_params = np.array([0, 0, 1])
+nu = 199
+result = minimize(negative_log_likelihood, initial_params, args=(X, y, nu), method='L-BFGS-B', bounds=[(None, None), (None, None), (1e-3, None)])
+beta_hat = result.x[:-1]  
+sigma_hat = result.x[-1] 
+
+print("\nMLE Results (T Distribution):")
+print(f"Intercept (beta_0): {beta_hat[0]}")
+print(f"Coefficient for x (beta_1): {beta_hat[1]}")
+print(f"Estimated sigma (standard deviation): {sigma_hat}")
+#R^2
+y_pred_t = X.dot(beta_hat)
+SS_error_t = np.sum((y - y_pred_t) ** 2)
+R2_t = 1 - (SS_error_t / SSTotal)
+print(f"R^2 for OLS model: {R2_ols}")
+print(f"R^2 for MLE with Normality Assumption: {R2_ols}")
+print(f"R^2 for MLE under T Distribution Assumption: {R2_t}")
+
+#Problem 2.3
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import multivariate_normal
+
+data = pd.read_csv('/Users/ellieieie_/Desktop/problem2_x.csv')
+print("Column Names:", data.columns)
+print("First few rows of data:\n", data.head())
+
+x1 = data['x1'].values
+x2 = data['x2'].values
+
+mean = [np.mean(x1), np.mean(x2)]
+cov_matrix = np.cov(data[['x1', 'x2']].T)
+rv = multivariate_normal(mean, cov_matrix)
+
+mean_x1_x2 = np.mean(x1)
+mean_x2 = np.mean(x2)
+cov_x1_x2 = cov_matrix[0, 1]
+var_x1 = cov_matrix[0, 0]
+var_x2 = cov_matrix[1, 1]
+conditional_mean_x2 = mean_x2 + (cov_x1_x2 / var_x1) * (x1 - mean_x1_x2)
+conditional_variance_x2 = var_x2 - (cov_x1_x2 ** 2 / var_x1)
+
+plt.figure(figsize=(12, 6))
+plt.scatter(x1, x2, color='blue', label='Observed data')
+plt.plot(x1, conditional_mean_x2, color='red', label='Conditional Mean of x2 given x1')
+
+conf_interval = 1.96 * np.sqrt(conditional_variance_x2)
+plt.fill_between(x1, conditional_mean_x2 - conf_interval, conditional_mean_x2 + conf_interval, color='red', alpha=0.2, label='95% CI')
+
+plt.xlabel('x1')
+plt.ylabel('x2')
+plt.title('Conditional Distribution of x2 given x1')
+plt.legend()
+plt.show()
+
+#Problem 3
+import matplotlib.pyplot as plt
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from statsmodels.tsa.ar_model import AutoReg
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.stattools import adfuller
+data = pd.read_csv('/Users/ellieieie_/Desktop/problem3.csv')
+x = data['x']
+
+plt.figure(figsize=(12, 6))
+plt.plot(x)
+plt.title('Time Series Data')
+plt.xlabel('Time')
+plt.ylabel('Value')
+plt.show()
+
+fig, ax = plt.subplots(1, 2, figsize=(15, 6))
+plot_acf(x, lags=40, ax=ax[0])
+plot_pacf(x, lags=40, ax=ax[1])
+plt.show()
+
+ar_models = {}
+for p in range(1, 4):
+    model = AutoReg(x, lags=p).fit()
+    ar_models[p] = model
+    print(f'AR({p}) Model AIC: {model.aic}')
+    print(f'AR({p}) Model BIC: {model.bic}')
+
+ma_models = {}
+for q in range(1, 4):
+    model = ARIMA(x, order=(0, 0, q)).fit()
+    ma_models[q] = model
+    print(f'MA({q}) Model AIC: {model.aic}')
+    print(f'MA({q}) Model BIC: {model.bic}')
+
+best_ar_model = min(ar_models, key=lambda k: ar_models[k].aic)
+best_ma_model = min(ma_models, key=lambda k: ma_models[k].aic)
+print(f'Best AR Model: AR({best_ar_model})')
+print(f'Best MA Model: MA({best_ma_model})')
+
