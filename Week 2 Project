@@ -168,3 +168,41 @@ plt.legend()
 plt.show()
 
 #Problem 3
+import matplotlib.pyplot as plt
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from statsmodels.tsa.ar_model import AutoReg
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.stattools import adfuller
+data = pd.read_csv('/Users/ellieieie_/Desktop/problem3.csv')
+x = data['x']
+
+plt.figure(figsize=(12, 6))
+plt.plot(x)
+plt.title('Time Series Data')
+plt.xlabel('Time')
+plt.ylabel('Value')
+plt.show()
+
+fig, ax = plt.subplots(1, 2, figsize=(15, 6))
+plot_acf(x, lags=40, ax=ax[0])
+plot_pacf(x, lags=40, ax=ax[1])
+plt.show()
+
+ar_models = {}
+for p in range(1, 4):
+    model = AutoReg(x, lags=p).fit()
+    ar_models[p] = model
+    print(f'AR({p}) Model AIC: {model.aic}')
+    print(f'AR({p}) Model BIC: {model.bic}')
+
+ma_models = {}
+for q in range(1, 4):
+    model = ARIMA(x, order=(0, 0, q)).fit()
+    ma_models[q] = model
+    print(f'MA({q}) Model AIC: {model.aic}')
+    print(f'MA({q}) Model BIC: {model.bic}')
+
+best_ar_model = min(ar_models, key=lambda k: ar_models[k].aic)
+best_ma_model = min(ma_models, key=lambda k: ma_models[k].aic)
+print(f'Best AR Model: AR({best_ar_model})')
+print(f'Best MA Model: MA({best_ma_model})')
