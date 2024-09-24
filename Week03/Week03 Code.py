@@ -190,4 +190,8 @@ frobenius_norms = {}
 for key, simulated_cov in results.items():
     frobenius_norm = np.linalg.norm(simulated_cov - cov_matrix, 'fro')
     frobenius_norms[key] = frobenius_norm
+<<<<<<< HEAD
     print(f"Frobenius Norm for {key}: {frobenius_norm}")
+=======
+    print(f"Frobenius Norm for {key}: {frobenius_norm}")
+>>>>>>> 965aa1e250202eef2aeae259f2281b25ece2bf10

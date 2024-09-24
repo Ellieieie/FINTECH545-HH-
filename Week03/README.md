@@ -59,4 +59,7 @@ Make sure that your CSV file (DailyReturn.csv) is correctly formatted and locate
 The PCA analysis helps in reducing dimensionality by retaining the most significant principal components, which is crucial for speeding up simulations.
 When correcting the covariance matrix to be positive semi-definite, Higham's method ensures that the matrix can be used in multivariate normal simulations without errors.
 For any questions or issues, feel free to contact: hh315@duke.edu
+<<<<<<< HEAD
 
+=======
+>>>>>>> 965aa1e250202eef2aeae259f2281b25ece2bf10
