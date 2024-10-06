@@ -48,68 +48,76 @@ print(f"2. Log Return: Mean = {expected_mean_log:.2f}, Std Dev = {expected_std_l
 print(f"3. Classical Brownian Motion: Mean = {expected_mean_brownian:.2f}, Std Dev = {expected_std_brownian:.2f}")
 
 #Problem 2
-
 prices = pd.read_csv('/Users/ellieieie_/Desktop/DailyPrices.csv')
-prices["Date"] = pd.to_datetime(prices["Date"])
-prices.set_index("Date", inplace=True)
-prices = prices.asfreq('B')  
-prices.ffill(inplace=True)
 
+def return_calculate(prices, method="DISCRETE", date_column="Date"):
+    if date_column not in prices.columns:
+        raise ValueError(f"dateColumn: {date_column} not in DataFrame columns: {prices.columns.tolist()}")
 
-def return_calculate(prices, method="arithmetic"):
-    if method == "arithmetic":
-        returns = prices.pct_change().dropna()
-    elif method == "log":
-        returns = np.log(prices / prices.shift(1)).dropna()
+    vars = [col for col in prices.columns if col != date_column]
+    p = prices[vars].values
+    n, m = p.shape
+    p2 = np.empty((n - 1, m), dtype=np.float64)
+
+    for i in range(n - 1):
+        for j in range(m):
+            p2[i, j] = p[i + 1, j] / p[i, j]
+
+    if method.upper() == "DISCRETE":
+        p2 = p2 - 1.0
+    elif method.upper() == "LOG":
+        p2 = np.log(p2)
     else:
-        raise ValueError("Unsupported method. Choose 'arithmetic' or 'log'.")
-    return returns
+        raise ValueError(f"method: {method} must be in ('LOG', 'DISCRETE')")
 
-returns = return_calculate(prices, method="arithmetic")
+    dates = prices[date_column].iloc[1:].reset_index(drop=True)
+    out = pd.DataFrame({date_column: dates})
 
-holdings = {"GOOGL": 10, "NVDA": 75, "TSLA": 25, "META": 1}
+    for i, var in enumerate(vars):
+        out[var] = p2[:, i]
 
-nm = set(prices.columns).intersection(holdings.keys())
-current_prices = prices.iloc[-1][list(nm)]
-returns = returns[list(nm)]
+    return out
 
-returns["META"] = returns["META"] - returns["META"].mean()
+returns_discrete = return_calculate(prices, method="DISCRETE")
+print(returns_discrete.head())
 
-portfolio_value = sum(current_prices[stock] * quantity for stock, quantity in holdings.items())
-portfolio_returns = returns.dot(pd.Series(holdings))
-
-mean_arithmetic = portfolio_returns.mean()
-std_arithmetic = portfolio_returns.std()
-print(f"\n2a. Arithmetic Return: Mean = {mean_arithmetic:.2f}, Std Dev = {std_arithmetic:.2f}")
-
+returns_meta = returns_discrete["META"]
+returns_meta = returns_meta - returns_meta.mean()
 confidence_level = 0.05
+
 # 1. VaR using a normal distribution
-var_normal = stats.norm.ppf(1 - confidence_level, mean_arithmetic, std_arithmetic)
-# 2. VaR using a normal distribution with an exponentially weighted variance
+mean_meta = returns_meta.mean()
+std_meta = returns_meta.std()
+var_normal = stats.norm.ppf(1 - confidence_level, mean_meta, std_meta)
+
+# 2. VaR using a normal distribution with an exponentially weighted variance (λ = 0.94)
 lambda_ = 0.94
-weights = np.array([(1 - lambda_) * lambda_ ** i for i in range(len(portfolio_returns))])[::-1]
-weighted_mean = np.average(portfolio_returns, weights=weights)
-weighted_var = np.average((portfolio_returns - weighted_mean) ** 2, weights=weights)
+weights = np.array([(1 - lambda_) * lambda_ ** i for i in range(len(returns_meta))])[::-1]
+weighted_mean = np.average(returns_meta, weights=weights)
+weighted_var = np.average((returns_meta - weighted_mean) ** 2, weights=weights)
 var_ewma = stats.norm.ppf(1 - confidence_level, weighted_mean, np.sqrt(weighted_var))
+
 # 3. VaR using a MLE fitted T-distribution
-params = stats.t.fit(portfolio_returns)
+params = stats.t.fit(returns_meta)
 var_t = stats.t.ppf(1 - confidence_level, *params)
+
 # 4. VaR using a fitted AR(1) model
-model = ARIMA(portfolio_returns.values, order=(1, 0, 0)).fit()
+model = ARIMA(returns_meta.values, order=(1, 0, 0)).fit()
 forecast = model.forecast(steps=1)
 forecast_value = forecast[0]
-var_ar1 = forecast_value + stats.norm.ppf(1 - confidence_level) * portfolio_returns.std()
-# 5. VaR using Historical Simulation
-var_historical = portfolio_returns.quantile(confidence_level)
-# Compare the 5 VaR values
-print("\nVaR Comparison at 95% Confidence Level:")
-print(f"1. Normal Distribution VaR: {var_normal:.2f}")
-print(f"2. EWMA Normal Distribution VaR: {var_ewma:.2f}")
-print(f"3. MLE fitted T-distribution VaR: {var_t:.2f}")
-print(f"4. AR(1) Model VaR: {var_ar1:.2f}")
-print(f"5. Historical Simulation VaR: {var_historical:.2f}")
+var_ar1 = forecast_value + stats.norm.ppf(1 - confidence_level) * returns_meta.std()
 
-#Questioin 3
+# 5. VaR using Historical Simulation
+var_historical = returns_meta.quantile(confidence_level)
+
+print("\nVaR Comparison at 95% Confidence Level:")
+print(f"1. Normal Distribution VaR: {var_normal:.4f}")
+print(f"2. EWMA Normal Distribution VaR: {var_ewma:.4f}")
+print(f"3. MLE fitted T-distribution VaR: {var_t:.4f}")
+print(f"4. AR(1) Model VaR: {var_ar1:.4f}")
+print(f"5. Historical Simulation VaR: {var_historical:.4f}")
+
+#Problem 3
 
 prices = pd.read_csv("/Users/ellieieie_/Desktop/DailyPrices.csv")
 portfolio = pd.read_csv("/Users/ellieieie_/Desktop/portfolio.csv")
@@ -127,10 +135,8 @@ returns_a = returns[portfolio_a.index.intersection(returns.columns)]
 returns_b = returns[portfolio_b.index.intersection(returns.columns)]
 returns_c = returns[portfolio_c.index.intersection(returns.columns)]
 
-# Calculate portfolio values in dollars
 current_prices = prices.iloc[-1]
 
-# Only consider common stocks between current prices and the portfolio holdings
 common_stocks_a = portfolio_a.index.intersection(current_prices.index)
 common_stocks_b = portfolio_b.index.intersection(current_prices.index)
 common_stocks_c = portfolio_c.index.intersection(current_prices.index)
@@ -195,7 +201,7 @@ portfolio_value_total = (current_prices[common_stocks] * total_holdings[common_s
 total_portfolio_returns = aligned_returns_total.dot(weights_total)
 var_total_hist = -np.percentile(total_portfolio_returns, 100 * 0.03) * portfolio_value_total
 
-print("VaR of Portfolios at 97% Confidence Level (in $):")
+print("\nVaR of Portfolios at 97% Confidence Level (in $):")
 if 'var_a_97' in locals():
     print(f"1. Portfolio A Exponentially Weighted VaR: ${var_a_97:.2f}")
 if 'var_b_97' in locals():
