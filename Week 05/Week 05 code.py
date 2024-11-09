@@ -4,7 +4,8 @@ from scipy.stats import norm, t
 from sklearn.decomposition import PCA
 import threading
 from scipy.stats import t
-
+from joblib import Parallel, delayed
+from scipy.stats import spearmanr
 
 #Problem 2
 prices = pd.read_csv('/Users/ellieieie_/Desktop/problem1.csv')
@@ -53,87 +54,120 @@ print(f"Expected Shortfall using MLE-fitted T-distribution: {ES3}")
 print(f"\nVaR using Historical Simulation: {VaR4}")
 print(f"Expected Shortfall using Historical Simulation: {ES4}")
 
+
+
+
+
+
+
+
+
+
+
+
 #Problem 3
 portfolio = pd.read_csv('/Users/ellieieie_/Desktop/portfolio.csv')
 returns = pd.read_csv('/Users/ellieieie_/Desktop/DailyPrices.csv') 
 # Remove stocks from portfolio with no data
 portfolio = portfolio[portfolio['Stock'].isin(returns.columns)]
 
-# Function to compute VaR and ES for Generalized T-distribution
-def compute_var_es_t(returns, alpha=0.05):
-    params = t.fit(returns)
-    df, loc, scale = params
-    VaR = t.ppf(alpha, df, loc=loc, scale=scale)
-    ES = t.expect(lambda x: x, args=(df,), loc=loc, scale=scale, lb=-np.inf, ub=VaR) / alpha
-    return VaR, ES
+returns = returns.set_index("Date").pct_change().dropna().reset_index()
 
-# Function to compute VaR and ES for Normal distribution
-def compute_var_es_normal(returns, alpha=0.05):
-    mu, sigma = norm.fit(returns)
-    VaR = norm.ppf(alpha, loc=mu, scale=sigma)
-    ES = mu - sigma * norm.pdf(norm.ppf(alpha)) / alpha
-    return VaR, ES
+rnames = returns.columns
 
-current_prices = returns.iloc[-1]
-# Filter portfolios A, B, and C
-portfolio_A = portfolio[portfolio['Portfolio'] == 'A']
-portfolio_B = portfolio[portfolio['Portfolio'] == 'B']
-portfolio_C = portfolio[portfolio['Portfolio'] == 'C']
-# Calculate VaR and ES for Portfolios A and B (Generalized T-distribution)
-VaR_A, ES_A = {}, {}
-for stock in portfolio_A['Stock']:
-    stock_returns = returns[stock].dropna()
-    VaR_A[stock], ES_A[stock] = compute_var_es_t(stock_returns)
+currentPrice = prices.iloc[-1]
+stocks = portfolio['Stock']
 
-VaR_B, ES_B = {}, {}
-for stock in portfolio_B['Stock']:
-    stock_returns = returns[stock].dropna()
-    VaR_B[stock], ES_B[stock] = compute_var_es_t(stock_returns)
+# Define stocks by portfolio
+tStocks = portfolio[portfolio['Portfolio'].isin(["A", "B"])]['Stock']
+nStocks = portfolio[portfolio['Portfolio'] == "C"]['Stock']
 
-# Calculate VaR and ES for Portfolio C (Normal distribution)
-VaR_C, ES_C = {}, {}
-for stock in portfolio_C['Stock']:
-    stock_returns = returns[stock].dropna()
-    VaR_C[stock], ES_C[stock] = compute_var_es_normal(stock_returns)
+# Remove mean from returns
+returns = returns.apply(lambda x: x - x.mean())
 
-# Express VaR and ES as $ by multiplying by the stock's holdings (current price * number of shares)
-portfolio_A['current_value'] = portfolio_A['Stock'].map(current_prices) * portfolio_A['Holding']
-portfolio_B['current_value'] = portfolio_B['Stock'].map(current_prices) * portfolio_B['Holding']
-portfolio_C['current_value'] = portfolio_C['Stock'].map(current_prices) * portfolio_C['Holding']
+# Fit models (Generalized T for tStocks, Normal for nStocks)
+fittedModels = {}
+for s in tStocks:
+    params = t.fit(returns[s].dropna())
+    fittedModels[s] = {'type': 't', 'params': params}
 
-# Convert VaR and ES to dollar terms
-portfolio_A['VaR_$'] = portfolio_A['Stock'].map(VaR_A) * portfolio_A['current_value']
-portfolio_A['ES_$'] = portfolio_A['Stock'].map(ES_A) * portfolio_A['current_value']
+for s in nStocks:
+    mu, sigma = norm.fit(returns[s].dropna())
+    fittedModels[s] = {'type': 'normal', 'params': (mu, sigma)}
 
-portfolio_B['VaR_$'] = portfolio_B['Stock'].map(VaR_B) * portfolio_B['current_value']
-portfolio_B['ES_$'] = portfolio_B['Stock'].map(ES_B) * portfolio_B['current_value']
+# Create U matrix and calculate Spearman correlations
+U = pd.DataFrame({s: t.cdf(returns[s], *fittedModels[s]['params']) if fittedModels[s]['type'] == 't' 
+                  else norm.cdf(returns[s], *fittedModels[s]['params']) 
+                  for s in stocks})
+R = U.corr(method='spearman')
 
-portfolio_C['VaR_$'] = portfolio_C['Stock'].map(VaR_C) * portfolio_C['current_value']
-portfolio_C['ES_$'] = portfolio_C['Stock'].map(ES_C) * portfolio_C['current_value']
+# Check if matrix R is Positive Semi-Definite
+evals = eigvals(R)
+if np.all(evals >= -1e-8):
+    print("Matrix is PSD")
+else:
+    print("Matrix is not PSD")
 
-# Calculate portfolio-level VaR and ES by summing the dollar values
-portfolio_VaR = {
-    'A': portfolio_A['VaR_$'].sum(),
-    'B': portfolio_B['VaR_$'].sum(),
-    'C': portfolio_C['VaR_$'].sum(),
-}
+# Simulation using PCA-based copula
+NSim = 50000
+pca = PCA()
+simU = pd.DataFrame(norm.cdf(pca.fit_transform(np.random.normal(0, 1, (NSim, len(stocks))))) , columns=stocks)
 
-portfolio_ES = {
-    'A': portfolio_A['ES_$'].sum(),
-    'B': portfolio_B['ES_$'].sum(),
-    'C': portfolio_C['ES_$'].sum(),
-}
+# Evaluate simulated returns from fitted models
+def evaluate_simulated_return(stock, model, simU):
+    if model['type'] == 't':
+        return t.ppf(simU[stock], *model['params'])
+    else:
+        mu, sigma = model['params']
+        return norm.ppf(simU[stock], loc=mu, scale=sigma)
 
-# Calculate total VaR and ES by summing across all portfolios
-total_VaR = portfolio_VaR['A'] + portfolio_VaR['B'] + portfolio_VaR['C']
-total_ES = portfolio_ES['A'] + portfolio_ES['B'] + portfolio_ES['C']
+simulatedReturns = pd.DataFrame({s: evaluate_simulated_return(s, fittedModels[s], simU) for s in stocks})
 
-print("\nPortfolio VaR (A) : $", portfolio_VaR['A'])
-print("Portfolio VaR (B) : $", portfolio_VaR['B'])
-print("Portfolio VaR (C) : $", portfolio_VaR['C'])
-print("Total VaR in $:", total_VaR)
+# Portfolio Valuation and Risk Calculation
+def calcPortfolioRisk(simulatedReturns, portfolio, currentPrice):
+    nVals = len(portfolio) * NSim
+    pnl = []
+    
+    for i, row in portfolio.iterrows():
+        stock = row['Stock']
+        holding = row['Holding']
+        price = currentPrice[stock]
+        
+        currentValue = holding * price
+        simValues = holding * price * (1.0 + simulatedReturns[stock])
+        
+        pnl.append(simValues - currentValue)
 
-print("Portfolio ES (A) : $", portfolio_ES['A'])
-print("Portfolio ES (B) : $", portfolio_ES['B'])
-print("Portfolio ES (C) : $", portfolio_ES['C'])
-print("Total ES : $", total_ES)
+    values = pd.concat(pnl, axis=1).sum(axis=1)
+    VaR95 = -np.percentile(values, 5)
+    ES95 = -values[values <= -VaR95].mean()
+    
+    return VaR95, ES95
+
+risk_A = calcPortfolioRisk(simulatedReturns[portfolio[portfolio['Portfolio'] == 'A']['Stock']], portfolio[portfolio['Portfolio'] == 'A'], currentPrice)
+risk_B = calcPortfolioRisk(simulatedReturns[portfolio[portfolio['Portfolio'] == 'B']['Stock']], portfolio[portfolio['Portfolio'] == 'B'], currentPrice)
+risk_C = calcPortfolioRisk(simulatedReturns[portfolio[portfolio['Portfolio'] == 'C']['Stock']], portfolio[portfolio['Portfolio'] == 'C'], currentPrice)
+
+print(f"Portfolio A VaR95: ${risk_A[0]:.2f}, ES95: ${risk_A[1]:.2f}")
+print(f"Portfolio B VaR95: ${risk_B[0]:.2f}, ES95: ${risk_B[1]:.2f}")
+print(f"Portfolio C VaR95: ${risk_C[0]:.2f}, ES95: ${risk_C[1]:.2f}")
+
+# Full Portfolio Metrics with Different Covariances
+def ewCovar(returns, lambda_=0.97):
+    weights = np.array([(1 - lambda_) * (lambda_ ** i) for i in range(len(returns))])
+    weights = weights[::-1] / weights.sum()  # Reverse weights to match order
+    return np.cov(returns, aweights=weights, rowvar=False)
+
+covar = ewCovar(returns, 0.97)
+simulatedReturns = pd.DataFrame(pca.fit_transform(np.random.multivariate_normal(np.zeros(len(stocks)), covar, NSim)), columns=stocks)
+risk_n  = calcPortfolioRisk(simulatedReturns, portfolio, currentPrice)
+
+# Rename VaR and ES columns
+risk_df = pd.DataFrame({
+    'Portfolio': ['A', 'B', 'C', 'Total'],
+    'VaR95': [risk_A[0], risk_B[0], risk_C[0], risk_A[0] + risk_B[0] + risk_C[0]],
+    'ES95': [risk_A[1], risk_B[1], risk_C[1], risk_A[1] + risk_B[1] + risk_C[1]],
+    'Normal_VaR': [risk_n[0]] * 3 + [sum(risk_n[:3])],
+    'Normal_ES': [risk_n[1]] * 3 + [sum(risk_n[1:3])]
+})
+print(risk_df)
