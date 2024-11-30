@@ -105,9 +105,9 @@ if __name__ == "__main__":
     print("Problem 2 Successfully")
 
     # Problem 3: Fit Fama-French Model
-    stock_returns = pd.read_csv("DailyPrices.csv")
-    factors = pd.read_csv("F-F_Research_Data_Factors_daily.CSV")
-    momentum = pd.read_csv("F-F_Momentum_Factor_daily.CSV")
+    stock_returns = pd.read_csv("../../../../../Downloads/H6530/code/DailyPrices.csv")
+    factors = pd.read_csv("../../../../../Downloads/H6530/code/F-F_Research_Data_Factors_daily.CSV")
+    momentum = pd.read_csv("../../../../../Downloads/H6530/code/F-F_Momentum_Factor_daily.CSV")
     factors.columns = [col.strip() for col in factors.columns]  # Strip any whitespace from column names
     momentum.columns = [col.strip() for col in momentum.columns]
     
@@ -136,7 +136,7 @@ if __name__ == "__main__":
     scaler = StandardScaler()
     aligned_factors = scaler.fit_transform(aligned_factors)
     
-    with open('Fama_French_Results.txt', 'w') as f:
+    with open('../../../../../Downloads/H6530/code/Fama_French_Results.txt', 'w') as f:
         for i, stock in enumerate(merged_data.columns.difference(['Date', 'Mkt-RF', 'SMB', 'HML', 'Mom'])):
             f.write(f"Model for {stock}\n")
             stock_returns = merged_data[stock].values
