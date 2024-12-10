@@ -1,12 +1,9 @@
 import numpy as np
 
 
-# Function to calculate exponentially weighted covariance
-def expW(m, lambd):
-    w = np.empty(m)
+def expW(m, λ):
+    w = np.zeros(m)
     for i in range(m):
-        w[i] = (1 - lambd) * lambd ** (m - i - 1)
-    # Normalize weights to sum to 1
-    w /= np.sum(w)
+        w[i] = (1 - λ) * (λ ** (m - i - 1))
+    w = w / w.sum()
     return w
-

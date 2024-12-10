@@ -1,0 +1,99 @@
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+from scipy.optimize import brentq
+from statsmodels.tsa.arima.model import ARIMA
+import warnings
+
+currentS = 170.15
+current_dt = datetime(2023, 10, 30)
+rf = 0.0525  
+dy = 0.0053 
+
+daily_prices = pd.read_csv('/Users/ellieieie_/Desktop/DailyPrices.csv', parse_dates=["Date"])
+returns = np.log(daily_prices["AAPL"]).diff().dropna()  
+returns = returns - returns.mean() 
+returns.index = pd.date_range(start="2023-01-01", periods=len(returns), freq="D")
+
+portfolio = pd.read_csv('/Users/ellieieie_/Desktop/problem3.csv')
+portfolio["ExpirationDate"] = pd.to_datetime(portfolio["ExpirationDate"], format="%m/%d/%Y")
+
+from scipy.stats import norm
+
+def black_scholes_call(S, K, T, r, sigma):
+    d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    return S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+
+def black_scholes_put(S, K, T, r, sigma):
+    d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    return K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+
+def gbsm(is_call, S, K, T, r, b, sigma):
+    if is_call:
+        return black_scholes_call(S, K, T, r, sigma)
+    else:
+        return black_scholes_put(S, K, T, r, sigma)
+def implied_volatility(option_type, market_price, S, K, T, r):
+    def objective_function(sigma):
+        return (gbsm(option_type == "Call", S, K, T, r, r - dy, sigma) - market_price)
+
+    try:
+        return brentq(objective_function, 1e-6, 10)
+    except ValueError:
+        return np.nan
+
+portfolio["ImpVol"] = portfolio.apply(
+    lambda row: implied_volatility(row["OptionType"], row["CurrentPrice"], currentS, row["Strike"],
+                                   (row["ExpirationDate"] - current_dt).days / 365, rf) 
+    if row["Type"] == "Option" else np.nan, axis=1
+)
+from statsmodels.tsa.arima.model import ARIMA
+
+ar_model = ARIMA(returns, order=(1, 0, 0)).fit()
+ar_coef = ar_model.params
+sigma = np.sqrt(ar_model.scale)
+nSim = 10000
+fwdT = 10
+
+def ar1_simulation(y_last, mean, phi, sigma, fwdT, nSim):
+    sim = np.zeros((fwdT, nSim))
+    for i in range(nSim):
+        sim[:, i] = np.cumsum(np.random.normal(loc=mean, scale=sigma, size=fwdT))
+    return sim
+
+mean = ar_coef["const"]
+phi = ar_coef["ar.L1"]
+
+arSim = ar1_simulation(returns.iloc[-1], mean, phi, sigma, fwdT, nSim)
+
+simReturns = arSim.sum(axis=0)
+simPrices = currentS * np.exp(simReturns)
+
+simulated_values = []
+current_values = []
+pnl = []
+
+for idx, row in portfolio.iterrows():
+    sim_price = simPrices
+    if row["Type"] == "Option":
+        T = (row["ExpirationDate"] - current_dt - timedelta(days=fwdT)).days / 365
+        sim_val = row["Holding"] * gbsm(row["OptionType"] == "Call", sim_price, row["Strike"], T, rf, rf - dy, row["ImpVol"])
+    elif row["Type"] == "Stock":
+        sim_val = row["Holding"] * sim_price
+    else:
+        sim_val = np.nan
+
+    simulated_values.append(sim_val)
+    current_values.append(row["Holding"] * row["CurrentPrice"])
+    pnl.append(sim_val - row["Holding"] * row["CurrentPrice"])
+
+portfolio["simulatedValue"] = simulated_values
+portfolio["currentValue"] = current_values
+portfolio["pnl"] = pnl
+agg_risk = portfolio.groupby("Portfolio")[["simulatedValue", "currentValue", "pnl"]].sum()
+print(agg_risk)
+
+
+agg_risk.to_csv("problem3_risk.csv")

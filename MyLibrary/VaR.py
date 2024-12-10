@@ -1,62 +1,66 @@
-import pandas as pd
-import numpy as np
-from scipy.stats import norm, t
-from statsmodels.tsa.arima.model import ARIMA
-from expo_weights import expW
-from exp_w_cov import ewCovar
+from scipy.stats import norm 
+from scipy.stats import t as tdist 
+from scipy.optimize import minimize 
+import numpy as np 
 
 
-# Load the data
-prices = pd.read_csv('/Users/ellieieie_/Desktop/problem1.csv')
-# Calculate returns, assuming 'Date' is the date column
-returns = prices.set_index("Date").pct_change().dropna()
+def ES(distribution, alpha=0.05):
+    dist_name = distribution.dist.name
+    if dist_name == 'norm':
+        mu = distribution.mean()
+        sigma = distribution.std()
+        z_alpha = norm.ppf(alpha)
+        pdf_z_alpha = norm.pdf(z_alpha)
+        ES = mu - sigma * pdf_z_alpha / alpha
+        return -ES
 
-# Extract the META returns series
-meta = returns["META"]
-# Normalize the returns
-meta_centered = meta - meta.mean()
-s = meta_centered.std()
+    elif dist_name == 't':
+        mu = distribution.kwds["loc"]
+        sigma = distribution.kwds["scale"]
+        nu = distribution.kwds['df']
+        t_alpha = tdist.ppf(alpha, df=nu)
+        pdf_t_alpha = tdist.pdf(t_alpha, df=nu)
+        ES_val = mu - sigma * ((nu + t_alpha ** 2) / (nu - 1)) * (pdf_t_alpha / alpha)
+        return -ES_val
+    else:
+        raise ValueError("Unsupported distribution type")
+def ESS(obj, alpha=0.05):
+    xs = np.sort(obj)
+    cutoff = int(np.ceil(alpha * len(xs)))
+    ES_val = xs[:cutoff].mean()
+    return -ES_val
+def VaR(obj, alpha=0.05):
+    xs = np.sort(obj)
+    cutoff = int(np.ceil(alpha * len(xs)))
+    Var = xs[cutoff]
+    return -Var
 
-# Normal VaR
-d1 = norm(0, s)
-VaR1 = -d1.ppf(0.05)
+def MLE_t_var(stock_list, value):
+    stock_list = np.array(stock_list)
+    def neg_log_likelihood(params, data):
+        nu, mu, sigma = params
+        return -np.sum(stats.t.logpdf(data, df=nu, loc=mu, scale=sigma))
 
-# Exponentially Weighted Normal VaR
-def ewCovar(data, lambda_):
-    weights = np.array([(1 - lambda_) * lambda_**i for i in range(len(data))][::-1])
-    weights /= weights.sum()  # Normalize to sum to 1
-    mean_adjusted = data - np.average(data, weights=weights)
-    return np.cov(mean_adjusted, aweights=weights)
+    initial_params = [5, np.mean(stock_list), np.std(stock_list)]
+    result = minimize(neg_log_likelihood, initial_params, args=(stock_list,),
+                      bounds=((2.01, None), (None, None), (1e-6, None)))
 
-s2 = np.sqrt(ewCovar(meta_centered.values.reshape(-1, 1), 0.94)[0, 0])
-d2 = norm(0, s2)
-VaR2 = -d2.ppf(0.05)
+    nu_mle, mu_mle, sigma_mle = result.x
+    confidence_level = 0.95
+    z_score_t_dist = stats.t.ppf(1 - confidence_level, df=nu_mle)
+    VaR = value * -z_score_t_dist * sigma_mle
+    return VaR
 
-# Fit T-distribution and T VaR
-def fit_general_t(data):
-    # Fit data to a T-distribution and return shape parameters
-    df, loc, scale = t.fit(data)
-    dist = t(df, loc, scale)
-    return loc, scale, df, dist
+def AR1_var(stock_list, value):
+    model =ARIMA(stock_list, order=(1, 0, 0)) 
+    model_fit = model.fit()
+    std = np.std(model_fit.resid)
+    z_score = 1.645
+    VaR = value * z_score * std
+    return VaR
 
-m, s, nu, d3 = fit_general_t(meta_centered)
-VaR3 = -d3.ppf(0.05)
-
-# Historical VaR
-VaR4 = -np.percentile(meta_centered, 5)
-
-# AR(1) Model VaR
-ar_model = ARIMA(meta_centered, order=(1, 0, 0))
-ar_fit = ar_model.fit()
-ar_sim = ar_fit.simulate(nsamples=1000000)
-VaR5 = -np.percentile(ar_sim, 5)
-
-# Current price of META
-current_price = prices["META"].iloc[-1]
-
-# Display results
-print(f"Normal VaR  : ${current_price * VaR1} - {100 * VaR1}%")
-print(f"EWMA Normal VaR: ${current_price * VaR2} - {100 * VaR2}%")
-print(f"T Dist VaR  : ${current_price * VaR3} - {100 * VaR3}%")
-print(f"AR(1) VaR   : ${current_price * VaR5} - {100 * VaR5}%")
-print(f"Historic VaR: ${current_price * VaR4} - {100 * VaR4}%")
+def historic_var(stock_list, value = 1):
+    sort_list = np.sort(stock_list)
+    var_return = np.percentile(sort_list, 5)
+    VaR = value * abs(var_return)
+    return VaR
