@@ -3,7 +3,7 @@ import pandas as pd
 from sklearn.decomposition import PCA
 import time
 
-
+data = pd.read_csv('/Users/ellieieie_/Desktop/DailyReturn.csv')
 
 def EWMA_var(data,alpha):
     var_list = []
@@ -49,9 +49,7 @@ def print_fnorm(cov_new,cov,simulation):
     fnorm = np.linalg.norm(cov_new - cov.values, ord='fro')
     print(f'for norm for four cov matrix based on {simulation} is {fnorm}')
 
-data = pd.read_csv('/Users/ellieieie_/Desktop/DailyReturn.csv')
 
-#generate four cov matrix
 corr = data.corr()
 var = data.var()
 ewma_var = EWMA_var(data,0.94)

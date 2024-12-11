@@ -1,0 +1,4 @@
+MyLib/MyLibrary.egg-info/PKG-INFO
+MyLib/MyLibrary.egg-info/SOURCES.txt
+MyLib/MyLibrary.egg-info/dependency_links.txt
+MyLib/MyLibrary.egg-info/top_level.txt

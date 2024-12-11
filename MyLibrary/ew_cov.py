@@ -1,5 +1,5 @@
 import numpy as np
-from expo_weights import expW
+from MyLibrary.expo_weights import expW
 
 
 def ewCovar(x, λ):
